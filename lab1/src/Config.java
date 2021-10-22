@@ -53,7 +53,7 @@ public class Config {
             //check if there are only two elements in line not including =
             if(parts.length != 2){
 
-                configError = new Errno("incorrect data");
+                configError = new Errno("incorrect data in config");
                 return;
 
             }
@@ -80,7 +80,7 @@ public class Config {
             //check if name of first element is not pointless
             if(isCorrect == false) {
 
-               configError = new Errno("incorrect data");
+               configError = new Errno("incorrect data in config tags");
                 return;
 
             }

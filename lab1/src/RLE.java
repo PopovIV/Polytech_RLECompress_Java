@@ -1,16 +1,16 @@
 import java.io.*;
-import  java.util.Vector;
-
+//class for RLE encoding/decoding
 public class RLE {
 
     //enum declarations
+    //enum to know what type of sequence
     enum Repeat{
 
         DIFFERENT_BYTES,
         SAME_BYTES
 
     }
-
+    //enum to know what to do compress or decompress
     enum MODE{
 
         UNKNOWN("UNKNOWN"),
@@ -40,8 +40,8 @@ public class RLE {
 
     //data from config class
     final private class dataFromConfig {
-        public FileInputStream inputStream;
-        public FileOutputStream outputStream;
+        public Reader input;
+        public Writer output;
         public MODE mode;
         public int bufferSize;
         public int maxCompressSize;
@@ -51,56 +51,18 @@ public class RLE {
     //data
     private dataFromConfig configData;
     private Errno rleError;
-    //constructor
+    //constructor from config class
     RLE(Config config){
 
         //const variables
-        final int MAX_LENGTH = 127;
-        final int MIN_LENGTH = 1;
+        final int MAX_LENGTH = 127;//Max size of sequence to encode
+        final int MIN_LENGTH = 1;//Min size of sequence to encode
 
 
         configData = new dataFromConfig();//default constructor with zeros
         if(config.checkError()){//if config wasn't initialized well
 
             rleError = new Errno( "config was not initialized");
-            return;
-
-        }
-
-        //open input file
-        File inputFile = new File(config.getDataByName(Config.configKey.INPUT_FILE));
-        try{
-
-            configData.inputStream = new FileInputStream(inputFile);
-
-        }
-        catch (FileNotFoundException exception){
-
-            rleError = new Errno(exception.toString());
-            return;
-
-        }
-
-        //open output file
-        File outputFile = new File(config.getDataByName(Config.configKey.OUTPUT_FILE));
-        try{
-
-            configData.outputStream = new FileOutputStream(outputFile);
-
-        }
-        catch (FileNotFoundException exception){
-
-            rleError = new Errno(exception.toString());
-            try {
-
-                configData.inputStream.close();
-
-            }
-           catch (IOException ex){
-
-               rleError.addToError(" + error with closing " + config.getDataByName(Config.configKey.INPUT_FILE));
-
-            }
             return;
 
         }
@@ -114,19 +76,56 @@ public class RLE {
         catch (NumberFormatException exception){
 
             rleError = new Errno(exception.toString());
-            closeStreams();
             return;
 
         }
 
-        //check if buggerSize is correct
+        //check if bufferSize is correct
         if(configData.bufferSize <= 0){
 
             rleError = new Errno("buffer size must be positive");
-            closeStreams();
             return;
 
         }
+
+        //create Reader from file
+        try{
+
+            configData.input = new Reader(config.getDataByName(Config.configKey.INPUT_FILE), configData.bufferSize);
+
+        }
+        catch (FileNotFoundException exception){
+
+            rleError = new Errno(exception.toString());
+            return;
+
+        }
+
+        //create Writer from file
+        try{
+
+            configData.output = new Writer(config.getDataByName(Config.configKey.OUTPUT_FILE), configData.bufferSize);
+
+        }
+        catch (FileNotFoundException exception){
+
+            rleError = new Errno(exception.toString());
+
+            try{
+
+                configData.input.close();
+
+            }
+            catch (IOException ex){
+
+                rleError.addToError(" error with closing output file");
+
+            }
+
+            return;
+
+        }
+
 
         //get maximum compress size
         try{
@@ -165,8 +164,8 @@ public class RLE {
 
         }
 
-        //check if maxSize is correct
-        if(configData.minCompressSize <= 0 || configData.minCompressSize > configData.maxCompressSize){
+        //check if minSize is correct
+        if(configData.minCompressSize <  MIN_LENGTH || configData.minCompressSize > configData.maxCompressSize){
 
             rleError = new Errno("min compress size must be bigger than 1 and smaller then maximum compress size");
             closeStreams();
@@ -177,27 +176,31 @@ public class RLE {
         //get mode
         configData.mode = MODE.toEnum(config.getDataByName(Config.configKey.MODE));
 
+        //means no error
         rleError = new Errno();
 
     }
 
     //methods
+    //method to compress information using rle
     private void compress() {
 
         //const variables
-        final int HIGH_BIT_IN_8 = 128;//128 == 10 000 000
-        final int MAX_LENGTH_TO_OUTPUT = 255;
+        final byte HIGH_BIT_IN_8 = (byte)128;//128(decimal) == 10 000 000(binary)
 
-        if (rleError.error)//if initialization was not successful
+        if (rleError.error) {//if initialization was not successful
+
+            rleError = new Errno( "construction of RLE class was not successful");
             return;
 
-        byte[] dataChunk = new byte[configData.bufferSize];
-        byte[] rleData = new byte[configData.bufferSize * 2];
+        }
 
-        int totalNumberOfBytes = 0;
+        byte[] dataChunk = new byte[configData.bufferSize];//array to store data from Reader
+        int chunkSize;//size of dataChunk(will change in run-time)
+
         try {
 
-            totalNumberOfBytes = configData.inputStream.read(dataChunk);
+            configData.input.updateReader();//read in Reader from file
 
         } catch (IOException exception) {
 
@@ -205,87 +208,154 @@ public class RLE {
             return;
 
         }
-        //read while there is something to read
-        while (totalNumberOfBytes != -1) {//-1 means no more data == end of file
+
+        try {
+
+            chunkSize = configData.input.fillArray(dataChunk, configData.bufferSize);//fill our array with data for compressing
+
+        }
+        catch (IOException exception){
+
+            rleError = new Errno("error with reading a file");
+            return;
+
+        }
+        //read while there is something to read or we need to process last bytes
+        while (!configData.input.isRead() || chunkSize != 0) {
 
             //RLE ALGORITHM
-            Byte auxByte = 0;
-            int countElem = 1;
-            int dataSize = 0;
-            Repeat repeat = Repeat.SAME_BYTES;
-            for(int i = 0; i < totalNumberOfBytes;i++){
+            byte controlByte = 0;
+            int countElem = 1;//count elem of sequence
+            Repeat sequenceType = Repeat.SAME_BYTES;//variable to know what type of sequence we have right now
+            for(int pos = 0; pos < chunkSize; pos++){
 
-                repeat = Repeat.SAME_BYTES;
-                int start = i;
+                sequenceType = Repeat.SAME_BYTES;
+                int start = pos;
+
                 //lets collect min pack of bytes
-                while(i + 1 < totalNumberOfBytes){
+                while(pos + 1 < chunkSize){
 
-                    if(repeat == Repeat.SAME_BYTES && dataChunk[i] != dataChunk[i + 1])
-                        repeat = Repeat.DIFFERENT_BYTES;
+                    if(sequenceType == Repeat.SAME_BYTES && dataChunk[pos] != dataChunk[pos + 1])
+                        sequenceType = Repeat.DIFFERENT_BYTES;
 
 
                     countElem++;
-                    i++;
+                    pos++;
 
-                    if((countElem == configData.minCompressSize) && (totalNumberOfBytes - i >= configData.minCompressSize))
+                    //when collected and can collect new min size sequence after this=> leave
+                    if((countElem == configData.minCompressSize) && (chunkSize - pos >= configData.minCompressSize))
                         break;
 
                 }
 
 
-                switch (repeat){
-                    case SAME_BYTES:
-                        while(i + 1 < totalNumberOfBytes) {
+                switch (sequenceType){
 
-                            //first condition checks if we still can create min compress size array of bytes
-                            if ((totalNumberOfBytes - i) == configData.minCompressSize || countElem == configData.maxCompressSize || dataChunk[i] != dataChunk[i + 1]) {
+                    case SAME_BYTES:
+
+                        while(pos + 1 < chunkSize) {
+
+                            //first condition checks if sequence is still have repeating symbols in it
+                            //second condition checks that we reach max elements in sequence
+                            //third condition checks if we can only create min compress size sequence
+                            if (dataChunk[pos] != dataChunk[pos + 1] || countElem == configData.maxCompressSize || (chunkSize - pos) == configData.minCompressSize) {
 
                                 //set highest bit to 1
-                                auxByte = (byte) (auxByte | HIGH_BIT_IN_8);
+                                controlByte = (byte)(controlByte | HIGH_BIT_IN_8);
                                 //set amount of repeated bytes
-                                auxByte = (byte) (auxByte | countElem);
+                                controlByte = (byte)(controlByte | countElem);
 
-                                rleData[++dataSize] = auxByte;
-                                rleData[++dataSize] = dataChunk[i];
+                                //write control byte to outputStream
+                                try {
+
+                                    configData.output.writeByte(controlByte);
+
+                                }
+                                catch (IOException exception){
+
+                                    rleError = new Errno("error with writing to a file");
+                                    return;
+
+                                }
+
+                                //write repeated byte to outputStream
+                                try {
+
+                                    configData.output.writeByte(dataChunk[pos]);
+
+                                }
+                                catch (IOException exception){
+
+                                    rleError = new Errno("error with writing to a file");
+                                    return;
+
+                                }
+
                                 //restore to begin
                                 countElem = 1;
-                                auxByte = 0;
+                                controlByte = 0;
                                 break;
 
                             }
                             countElem++;
-                            i++;
-
+                            pos++;
 
                         }
                         break;
 
                         case DIFFERENT_BYTES:
 
-                        while(i + 1 < totalNumberOfBytes) {
+                        while(pos + 1 < chunkSize) {
 
-
-                            if ((totalNumberOfBytes - i - 1) == configData.minCompressSize || countElem == configData.maxCompressSize || dataChunk[i] == dataChunk[i + 1]) {
+                            //first condition checks if sequence is still have different symbols in it
+                            //second condition checks that we reach max elements in sequence
+                            //third condition checks if we can only create min compress size sequence
+                            if (dataChunk[pos] == dataChunk[pos + 1] || countElem == configData.maxCompressSize || (chunkSize - pos - 1) == configData.minCompressSize) {
 
                                 countElem--;
                                 //set amount of repeated bytes
-                                auxByte = (byte) (auxByte | countElem);
+                                controlByte = (byte) (controlByte | countElem);
 
-                                rleData[++dataSize] = auxByte;
-                                for (int j = start; j < start + countElem; j++)
-                                    rleData[++dataSize] = dataChunk[j];
+                                //write control byte to outputStream
+                                try {
+
+                                    configData.output.writeByte(controlByte);
+
+                                }
+                                catch (IOException exception){
+
+                                    rleError = new Errno("error with writing to a file");
+                                    return;
+
+                                }
+
+                                //write sequence bytes to outputStream
+                                for (int i = start; i < start + countElem; i++) {
+
+                                    try {
+
+                                        configData.output.writeByte(dataChunk[i]);
+
+                                    }
+                                    catch (IOException exception){
+
+                                        rleError = new Errno("error with writing to a file");
+                                        return;
+
+                                    }
+
+                                }
 
                                 //restore to begin
-                                i--;
+                                pos--;
                                 countElem = 1;
-                                auxByte = 0;
+                                controlByte = 0;
                                 break;
 
                             }
                             countElem++;
-                            i++;
+                            pos++;
                         }
-
                         break;
 
                 }
@@ -294,42 +364,77 @@ public class RLE {
             }
             //add end
             if(countElem != 1){
-                switch (repeat) {
+                switch (sequenceType) {
                     case SAME_BYTES:
-                        auxByte = (byte) (auxByte | HIGH_BIT_IN_8);
+                        controlByte = (byte) (controlByte | HIGH_BIT_IN_8);
                         //set amount of repeated bytes
-                        auxByte = (byte) (auxByte | countElem);
+                        controlByte = (byte) (controlByte | countElem);
 
-                        rleData[++dataSize] = auxByte;
-                        rleData[++dataSize] = dataChunk[totalNumberOfBytes - 1];
+                        try {
+
+                            configData.output.writeByte(controlByte);
+
+                        }
+                        catch (IOException exception){
+
+                            rleError = new Errno("error with writing to a file");
+                            return;
+
+                        }
+
+                        try {
+
+                            configData.output.writeByte(dataChunk[chunkSize - 1]);
+
+                        }
+                        catch (IOException exception){
+
+                            rleError = new Errno("error with writing to a file");
+                            return;
+
+                        }
+
                         break;
                     case DIFFERENT_BYTES:
-                        auxByte = (byte) (auxByte | countElem) ;
+                        controlByte = (byte) (controlByte | countElem) ;
 
-                        rleData[++dataSize] = auxByte;
-                        for (int j = totalNumberOfBytes - countElem; j < totalNumberOfBytes; j++)
-                            rleData[++dataSize] = dataChunk[j];
+                        try {
+
+                            configData.output.writeByte(controlByte);
+
+                        }
+                        catch (IOException exception){
+
+                            rleError = new Errno("error with writing to a file");
+                            return;
+
+                        }
+
+                        for (int i = chunkSize - countElem; i < chunkSize; i++) {
+
+                            try {
+
+                                configData.output.writeByte(dataChunk[i]);
+
+                            } catch (IOException exception) {
+
+                                rleError = new Errno("error with writing to a file");
+                                return;
+
+                            }
+
+                        }
                         break;
                 }
             }
-            //set first elem of rleData - size of chunk to read in decompress
-            rleData[0] = (byte)(dataSize++);
 
-
-            //write to outputStream
-            if(!writeToOutStream(rleData, dataSize, configData.bufferSize, configData.outputStream)) {
-
-                rleError = new Errno("error with writing to  file");
-                return;
-
-            }
-
-            //read new chunk
+            //fill array with new data
             try {
 
-                totalNumberOfBytes = configData.inputStream.read(dataChunk);
+                chunkSize = configData.input.fillArray(dataChunk, configData.bufferSize);
 
-            } catch (IOException exception) {
+            }
+            catch (IOException exception){
 
                 rleError = new Errno("error with reading a file");
                 return;
@@ -340,156 +445,122 @@ public class RLE {
 
     }
 
-    static private boolean writeToOutStream(byte[] rleData, int dataSize, int bufferSize, FileOutputStream outputStream){
-
-        byte[] outputChunk = new byte[bufferSize];
-        int index = 0, pos;
-        for (pos = 0; pos < dataSize; pos++) {
-
-            outputChunk[index++] = rleData[pos];
-
-            if(index == bufferSize) {
-
-                try {
-
-                    outputStream.write(outputChunk);
-
-                }
-                catch (IOException exception) {
-
-                    return false;
-
-                }
-
-                index = 0;
-
-            }
-
-        }
-        //write end
-        if(index != 0) {
-
-            try {
-
-                outputStream.write(outputChunk, 0, index );
-
-            }
-            catch (IOException exception) {
-
-                return false;
-
-            }
-
-        }
-
-        return true;
-
-    }
-
+    //method to decompress information
     private void decompress() {
 
-        if (rleError.error)//if initialization was not successful
+        if (rleError.error) {//if initialization was not successful
+
+            rleError = new Errno( "construction of RLE class was not successful");
             return;
 
+        }
 
-        int numberOfBytesToRead;
         try {
 
-            numberOfBytesToRead = configData.inputStream.read();
+            configData.input.updateReader();//read in Reader from file
 
-        } catch (IOException exception) {
+        }
+        catch (IOException exception) {
 
             rleError = new Errno("error with reading a file");
             return;
 
         }
+
+        final byte HIGH_BIT_IN_8 = (byte)128;//128 == 10 000 000
+
+        Repeat sequenceType;//variable to know what type of sequence we have right now
+        byte controlByte;
+        int sequenceSize;//length of encode sequence
+
         //read while there is something to read
-        int mostSignByte;
-        while (numberOfBytesToRead != -1) {//-1 means no more data == end of file
+        while (!configData.input.isRead()) {
 
-            byte[] dataChunk = new byte[numberOfBytesToRead];/////
-            Vector<Byte> result = new Vector<>();
-            try {
+            try{
 
-                configData.inputStream.read(dataChunk);
+                controlByte = configData.input.readByte();
 
-            } catch (IOException exception) {
+            }
+            catch (IOException exception){
 
                 rleError = new Errno("error with reading a file");
                 return;
 
             }
 
+            //need to know what type of chunk
+            sequenceType = (Byte.toUnsignedInt((byte)(controlByte & HIGH_BIT_IN_8)) == 0) ? Repeat.DIFFERENT_BYTES : Repeat.SAME_BYTES;
+            sequenceSize = Byte.toUnsignedInt((byte)(controlByte & ~HIGH_BIT_IN_8));
 
-            for(int i = 0; i < numberOfBytesToRead;){
+            byte[] dataChunk = new byte[sequenceSize];
 
-                byte byt = dataChunk[i];//get our byte
-                mostSignByte = Byte.toUnsignedInt((byte)(byt & 128));//
-                int shift = Byte.toUnsignedInt((byte)(byt & ~128));
+            switch (sequenceType){
 
-
-                if(mostSignByte == 0){//if there is no repeat
-                    for(int j = i + 1; j < i + 1 + shift; j++)
-                          result.add(dataChunk[j]);
-                    i = i + shift + 1;
-                }
-                else{
-                    for(int t = 0; t < shift; t++)
-                          result.add(dataChunk[i + 1]);
-                    i = i + 2;
-                }
-
-            }
-
-
-            //write to outputStream
-            byte[] outputChunk = new byte[configData.bufferSize];
-            int index = 0, pos;
-            for (pos = 0; pos < result.size(); pos++) {
-
-                outputChunk[index] = result.elementAt(pos);
-                index++;
-                if(index == configData.bufferSize) {
+                case DIFFERENT_BYTES:
 
                     try {
 
-                        configData.outputStream.write(outputChunk, 0, index);
+                        configData.input.fillArray(dataChunk, sequenceSize);
 
                     }
                     catch (IOException exception) {
 
-                        rleError = new Errno("error with writing to a file");
+                        rleError = new Errno("error with reading a file");
                         return;
 
                     }
 
-                    index = 0;
+                    for (int i = 0; i < sequenceSize; i++) {
 
-                }
+                        try {
 
+                            configData.output.writeByte(dataChunk[i]);
+
+                        }
+                        catch (IOException exception) {
+
+                            rleError = new Errno("error with writing to a file");
+                            return;
+                        }
+                    }
+                    break;
+               case SAME_BYTES:
+
+                   byte byteToPrint;
+                   try{
+
+                       byteToPrint = configData.input.readByte();
+
+                   }
+                   catch (IOException exception){
+
+                       rleError = new Errno("error with reading a file");
+                       return;
+
+                   }
+
+                   for(int i = 0; i < sequenceSize; i++){
+
+                       try {
+
+                           configData.output.writeByte(byteToPrint);
+
+                       }
+                       catch (IOException exception) {
+
+                           rleError = new Errno("error with writing to a file");
+                           return;
+
+                       }
+
+                   }
+                   break;
             }
-            //write end
-            if(index != 0) {
 
-                try {
-
-                    configData.outputStream.write(outputChunk, 0, index);
-
-                }
-                catch (IOException exception) {
-
-                    rleError = new Errno("error with writing to a file");
-                    return;
-
-                }
-
-            }
-
-            //read new size of chunk
+            //read new chunk if needed
             try {
 
-                numberOfBytesToRead = configData.inputStream.read();
-
+                configData.input.updateReader();
 
             } catch (IOException exception) {
 
@@ -529,7 +600,7 @@ public class RLE {
 
         try {
 
-            configData.inputStream.close();
+            configData.input.close();
 
         }
         catch (IOException ex){
@@ -540,7 +611,7 @@ public class RLE {
 
         try {
 
-            configData.outputStream.close();
+            configData.output.close();
 
         }
         catch (IOException ex){
@@ -551,17 +622,18 @@ public class RLE {
 
     }
 
+    //method to check if error happened
     public boolean checkError(){
 
         return  rleError.error;
 
     }
 
+    //method to get error message
     public String getErrorMessage(){
 
         return rleError.message;
 
     }
-
 
 }
