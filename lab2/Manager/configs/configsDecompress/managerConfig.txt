@@ -1,0 +1,16 @@
+
+INPUT_FILE = files/myRLE.rle
+
+OUTPUT_FILE = files/Microsoft.bmp
+
+READER_CONFIG = configs/configsDecompress/readerConfig.txt
+
+EXECUTOR_CONFIG = configs/configsDecompress/executorConfig.txt
+
+WRITER_CONFIG = configs/configsDecompress/writerConfig.txt
+
+READER_NAME = com.java_polytech.pipeline.Reader
+
+EXECUTOR_NAME = com.java_polytech.pipeline.Executor
+
+WRITER_NAME = com.java_polytech.pipeline.Writer

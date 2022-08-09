@@ -1,0 +1,13 @@
+#WARNING! ALL COMMENTS STARTS WITH #
+#EMPTY LINES ARE ALLOWED
+
+#EXECUTOR CONFIG MUST HAVE NEXT FIELDS:
+#     MAX_COMPRESS - max compress size(must be positive and less then 128)
+#     MIN_COMPRESS - min compress size(must be positive and less then MAX_COMPRESS)
+#     BUFFER_SIZE - size of readed bytes(must be positive)
+#     MODE - COMPRESS/DECOMPRESS
+
+MAX_COMPRESS = 127
+MIN_COMPRESS = 3
+BUFFER_SIZE = 100
+MODE = DECOMPRESS

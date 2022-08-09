@@ -467,6 +467,7 @@ public class RLE {
 
         }
 
+        //const variables
         final byte HIGH_BIT_IN_8 = (byte)128;//128 == 10 000 000
 
         Repeat sequenceType;//variable to know what type of sequence we have right now

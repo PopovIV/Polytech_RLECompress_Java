@@ -1,0 +1,30 @@
+#WARNING! ALL COMMENTS STARTS WITH #
+#EMPTY LINES ARE ALLOWED
+
+#MANAGER CONFIG MUST HAVE NEXT FIELDS:
+#     INPUT_FILE - path to source file
+#     OUTPUT_FILE - path to result file
+#     READER_CONFIG - path to reader config
+#     EXECUTOR_CONFIG - path to executors configs, separeted by commas; They must be in the same order like in EXECUTOR_NAME 
+#     WRITER_CONFIG - path to writer config
+#     READER_NAME - name of reader class
+#     EXECUTOR_NAME - name of executors classes, separeted by commas
+#     WRITER_NAME - name of writer class
+
+#SACHUK EXECUTORS
+
+INPUT_FILE = files/orwell.txt
+
+OUTPUT_FILE = files/out.txt
+
+READER_CONFIG = configs/AdditionalExecutors/readerConfig.txt
+
+EXECUTOR_CONFIG = configs/AdditionalExecutors/executorConfigCompress.txt, configs/AdditionalExecutors/lzw_executor_encode_config.txt, configs/AdditionalExecutors/lzw_executor_decode_config.txt, configs/AdditionalExecutors/executorConfigDecompress.txt
+
+WRITER_CONFIG = configs/AdditionalExecutors/writerConfig.txt
+
+READER_NAME = com.java_polytech.pipeline.Reader
+
+EXECUTOR_NAME = com.java_polytech.pipeline.Executor, LZW_Executor, LZW_Executor, com.java_polytech.pipeline.Executor
+
+WRITER_NAME =com.java_polytech.pipeline.Writer

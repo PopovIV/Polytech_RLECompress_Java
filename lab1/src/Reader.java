@@ -8,7 +8,6 @@ public class Reader {
     //data
     private final FileInputStream inputStream;//inputStream that was created from file
     private byte buffer[];//buffer array to keep information from input file
-    private final int maxBufferSize;//max buffer size from config
     private int bufferSize = 0;//actual buffer size from read function
     private int pos = 0;//position in buffer
 
@@ -18,7 +17,6 @@ public class Reader {
 
         inputStream = new FileInputStream(fileName);
         buffer = new byte[maxBufSize];
-        maxBufferSize = maxBufSize;
 
     }
 

@@ -14,7 +14,7 @@ public class Config {
         OUTPUT_FILE,//name of output file
         MAX_COMPRESS,//length of max compressed chunk
         MIN_COMPRESS,//length of min compressed chuck
-        MODE//mode - COMPRESS or DECOMPRESS
+        MODE//mode - COMPRESS or DECOMPRESS or UNKNOWN(for incorrect input)
 
     }
 
@@ -81,7 +81,7 @@ public class Config {
             if(isCorrect == false) {
 
                configError = new Errno("incorrect data in config tags");
-                return;
+               return;
 
             }
 
@@ -123,6 +123,5 @@ public class Config {
         return configData.get(key);
 
     }
-
 
 }
